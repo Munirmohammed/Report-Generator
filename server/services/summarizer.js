@@ -4,12 +4,14 @@ require("dotenv").config();
 const GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent";
 const API_KEY = process.env.GEMINI_API_KEY;
 
-async function summarizeCommits(repoName, commits) {
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+async function summarizeCommits(repoName, commits, retryCount = 0) {
   if (commits.length === 0) return null;
 
   const commitMessages = commits.map(c => `- ${c.commit.message}`).join("\n");
   
-    const prompt = `
+  const prompt = `
     Analyze the following Git commit messages from the past week for the project "${repoName}" and synthesize them into a concise, professional bulleted list for a weekly progress report.
     
     Guidelines:
@@ -40,6 +42,11 @@ async function summarizeCommits(repoName, commits) {
     // Strip any remaining asterisks just in case the AI includes them
     return result.replace(/\*+/g, '').trim();
   } catch (error) {
+    if (error.response?.status === 503 && retryCount < 2) {
+      console.log(`Gemini busy (503) for ${repoName}, retrying in 2s...`);
+      await sleep(2000);
+      return summarizeCommits(repoName, commits, retryCount + 1);
+    }
     console.error("Gemini API Error:", error.response?.data || error.message);
     return `${repoName}:\n- (Error summarizing commits: ${error.message})`;
   }

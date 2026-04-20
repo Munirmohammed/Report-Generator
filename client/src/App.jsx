@@ -137,7 +137,7 @@ const App = () => {
 
         {activeTab === 'manual' && (
           <div>
-            <h2>Manual Generator</h2>
+            <h2 style={{ marginBottom: '1rem' }}>Manual Generator</h2>
             <div className="card">
               <form onSubmit={handleManualGenerate} style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', maxWidth: '400px' }}>
                 <div>
