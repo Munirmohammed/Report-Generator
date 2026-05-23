@@ -52,8 +52,11 @@ async function summarizeCommits(repoName, commits, retryCount = 0) {
     });
 
     const result = response.data.candidates[0].content.parts[0].text;
-    // Strip any remaining asterisks just in case the AI includes them
-    return result.replace(/\*+/g, '').trim();
+    const sep = '='.repeat(50);
+    return result
+      .replace(/\*+/g, '')
+      .trim()
+      .replace(/^(Project Name: .+)$/gm, `${sep}\n$1\n${sep}`);
   } catch (error) {
     if (error.response?.status === 503 && retryCount < 2) {
       console.log(`Gemini busy (503) for ${repoName}, retrying in 2s...`);

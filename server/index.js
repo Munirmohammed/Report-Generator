@@ -78,8 +78,11 @@ async function generateFullReport(startDate, endDate, selectedCommits = null) {
   const mainReport = combinedReport.trim();
   if (!mainReport) return "No activity found for the selected period.";
 
+  const sep = '='.repeat(50);
   const operationalSummary = `
+${sep}
 Project Name: Operational & Infrastructure
+${sep}
 - Monitored server health and system performance daily to ensure maximum uptime and stability.
 - Performed regular audits of background processes and scheduled tasks to maintain code reliability.
 - Proactively managed backend infrastructure and optimized API performance for all active projects.`;
