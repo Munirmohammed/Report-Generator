@@ -11,6 +11,13 @@ const App = () => {
   const [loading, setLoading] = useState(false);
   const [isTest, setIsTest] = useState(true);
 
+  // Manual generator state
+  const [genStep, setGenStep] = useState(1);
+  const [previewData, setPreviewData] = useState([]);
+  const [selectedShas, setSelectedShas] = useState({});
+  const [genStartDate, setGenStartDate] = useState('');
+  const [genEndDate, setGenEndDate] = useState('');
+
   useEffect(() => {
     fetchRepos();
     fetchReports();
@@ -32,23 +39,65 @@ const App = () => {
     setCurrentDraft(res.data);
   };
 
-  const handleManualGenerate = async (e) => {
+  const handlePreviewCommits = async (e) => {
     e.preventDefault();
     const formData = new FormData(e.target);
     const startDate = formData.get('startDate');
     const endDate = formData.get('endDate');
-
+    setGenStartDate(startDate);
+    setGenEndDate(endDate);
     setLoading(true);
     try {
-      const res = await axios.post(`${API_BASE}/reports/generate`, { startDate, endDate });
+      const res = await axios.post(`${API_BASE}/commits/preview`, { startDate, endDate });
+      const data = res.data;
+      if (data.length === 0) {
+        alert("No commits found in this date range.");
+        return;
+      }
+      setPreviewData(data);
+      const initial = {};
+      data.forEach(({ repo, commits }) => { initial[repo] = commits.map(c => c.sha); });
+      setSelectedShas(initial);
+      setGenStep(2);
+    } catch (err) {
+      alert("Error fetching commits: " + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleGenerateFromSelected = async () => {
+    const totalSelected = Object.values(selectedShas).reduce((s, v) => s + v.length, 0);
+    if (totalSelected === 0) { alert("No commits selected."); return; }
+    setLoading(true);
+    try {
+      const res = await axios.post(`${API_BASE}/reports/generate`, {
+        startDate: genStartDate,
+        endDate: genEndDate,
+        selectedCommits: Object.fromEntries(
+          Object.entries(selectedShas).map(([repo, shas]) => [repo, shas])
+        )
+      });
       setCurrentDraft(res.data);
       setActiveTab('dashboard');
+      setGenStep(1);
+      setPreviewData([]);
     } catch (err) {
       alert("Error generating report: " + err.message);
     } finally {
       setLoading(false);
     }
   };
+
+  const toggleSha = (repo, sha) => {
+    setSelectedShas(prev => {
+      const cur = prev[repo] || [];
+      return { ...prev, [repo]: cur.includes(sha) ? cur.filter(s => s !== sha) : [...cur, sha] };
+    });
+  };
+
+  const selectAll = (repo, commits) => setSelectedShas(prev => ({ ...prev, [repo]: commits.map(c => c.sha) }));
+  const selectNone = (repo) => setSelectedShas(prev => ({ ...prev, [repo]: [] }));
 
   const handleSaveDraft = async () => {
     if (!currentDraft) return;
@@ -137,22 +186,83 @@ const App = () => {
 
         {activeTab === 'manual' && (
           <div>
-            <h2 style={{ marginBottom: '1rem' }}>Manual Generator</h2>
-            <div className="card">
-              <form onSubmit={handleManualGenerate} style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', maxWidth: '400px' }}>
-                <div>
-                  <label style={{ display: 'block', marginBottom: '0.5rem' }}>Start Date</label>
-                  <input type="date" name="startDate" required style={{ width: '100%' }} />
+            {genStep === 1 && (
+              <div>
+                <h2 style={{ marginBottom: '1rem' }}>Manual Generator</h2>
+                <div className="card">
+                  <form onSubmit={handlePreviewCommits} style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', maxWidth: '400px' }}>
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '0.5rem' }}>Start Date</label>
+                      <input type="date" name="startDate" required style={{ width: '100%' }} />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '0.5rem' }}>End Date</label>
+                      <input type="date" name="endDate" required style={{ width: '100%' }} />
+                    </div>
+                    <button type="submit" disabled={loading}>
+                      {loading ? 'Fetching Commits...' : 'Preview Commits'}
+                    </button>
+                  </form>
                 </div>
+              </div>
+            )}
+
+            {genStep === 2 && (() => {
+              const totalSelected = Object.values(selectedShas).reduce((s, v) => s + v.length, 0);
+              const totalCommits = previewData.reduce((s, r) => s + r.commits.length, 0);
+              return (
                 <div>
-                  <label style={{ display: 'block', marginBottom: '0.5rem' }}>End Date</label>
-                  <input type="date" name="endDate" required style={{ width: '100%' }} />
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+                    <h2>Select Commits</h2>
+                    <button className="secondary" onClick={() => setGenStep(1)}>Back</button>
+                  </div>
+                  <p className="text-muted" style={{ marginBottom: '1.5rem', fontSize: '0.875rem' }}>
+                    {totalCommits} commits found across {previewData.length} project{previewData.length !== 1 ? 's' : ''}. Uncheck any you want excluded from the report.
+                  </p>
+
+                  {previewData.map(({ repo, commits }) => (
+                    <div key={repo} className="card" style={{ marginBottom: '1rem' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+                        <strong style={{ fontSize: '1rem' }}>{repo}</strong>
+                        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                          <span className="text-muted" style={{ fontSize: '0.78rem' }}>
+                            {(selectedShas[repo] || []).length}/{commits.length} selected
+                          </span>
+                          <button className="secondary" style={{ padding: '2px 10px', fontSize: '0.75rem' }} onClick={() => selectAll(repo, commits)}>All</button>
+                          <button className="secondary" style={{ padding: '2px 10px', fontSize: '0.75rem' }} onClick={() => selectNone(repo)}>None</button>
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                        {commits.map(commit => (
+                          <label key={commit.sha} style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem', cursor: 'pointer', padding: '0.5rem 0.6rem', borderRadius: '6px', background: 'rgba(255,255,255,0.03)', userSelect: 'none' }}>
+                            <input
+                              type="checkbox"
+                              checked={(selectedShas[repo] || []).includes(commit.sha)}
+                              onChange={() => toggleSha(repo, commit.sha)}
+                              style={{ marginTop: '3px', flexShrink: 0 }}
+                            />
+                            <div>
+                              <div style={{ fontSize: '0.875rem', lineHeight: '1.4' }}>{commit.message}</div>
+                              <div className="text-muted" style={{ fontSize: '0.72rem', marginTop: '2px' }}>
+                                {commit.sha.slice(0, 7)} &middot; {new Date(commit.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                              </div>
+                            </div>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+
+                  <button
+                    onClick={handleGenerateFromSelected}
+                    disabled={loading || totalSelected === 0}
+                    style={{ width: '100%', marginTop: '0.5rem' }}
+                  >
+                    {loading ? 'Generating...' : `Generate Report from ${totalSelected} Commit${totalSelected !== 1 ? 's' : ''}`}
+                  </button>
                 </div>
-                <button type="submit" disabled={loading}>
-                  {loading ? 'Generating...' : 'Generate Report'}
-                </button>
-              </form>
-            </div>
+              );
+            })()}
           </div>
         )}
 

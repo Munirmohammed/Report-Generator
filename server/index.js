@@ -54,14 +54,20 @@ app.get("/api/reports/latest-draft", (req, res) => {
   res.json(draft || null);
 });
 
-async function generateFullReport(startDate, endDate) {
+async function generateFullReport(startDate, endDate, selectedCommits = null) {
   const db = getDb();
   const since = new Date(startDate).toISOString();
   const until = new Date(endDate).toISOString();
 
   let combinedReport = "";
   for (const repo of db.repos) {
-    const commits = await getCommits(repo.owner, repo.name, since, until);
+    let commits = await getCommits(repo.owner, repo.name, since, until);
+
+    if (selectedCommits !== null && selectedCommits[repo.name] !== undefined) {
+      const allowedShas = new Set(selectedCommits[repo.name]);
+      commits = commits.filter(c => allowedShas.has(c.sha));
+    }
+
     if (commits.length > 0) {
       const summary = await summarizeCommits(repo.name, commits);
       if (summary) {
@@ -81,10 +87,37 @@ Project Name: Operational & Infrastructure
   return `${mainReport}\n\n${operationalSummary.trim()}`;
 }
 
-app.post("/api/reports/generate", async (req, res) => {
+app.post("/api/commits/preview", async (req, res) => {
   const { startDate, endDate } = req.body;
+  const db = getDb();
+  const since = new Date(startDate).toISOString();
+  const until = new Date(endDate).toISOString();
   try {
-    const content = await generateFullReport(startDate, endDate);
+    const result = [];
+    for (const repo of db.repos) {
+      const commits = await getCommits(repo.owner, repo.name, since, until);
+      if (commits.length > 0) {
+        result.push({
+          repo: repo.name,
+          owner: repo.owner,
+          commits: commits.map(c => ({
+            sha: c.sha,
+            message: c.commit.message.split("\n")[0],
+            date: c.commit.author.date,
+          }))
+        });
+      }
+    }
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post("/api/reports/generate", async (req, res) => {
+  const { startDate, endDate, selectedCommits } = req.body;
+  try {
+    const content = await generateFullReport(startDate, endDate, selectedCommits || null);
     const db = getDb();
     const newReport = {
       id: Date.now(),
