@@ -69,8 +69,16 @@ async function generateFullReport(startDate, endDate) {
       }
     }
   }
+  const mainReport = combinedReport.trim();
+  if (!mainReport) return "No activity found for the selected period.";
 
-  return combinedReport.trim() || "No activity found for the selected period.";
+  const operationalSummary = `
+Project Name: Operational & Infrastructure
+- Monitored server health and system performance daily to ensure maximum uptime and stability.
+- Performed regular audits of background processes and scheduled tasks to maintain code reliability.
+- Proactively managed backend infrastructure and optimized API performance for all active projects.`;
+
+  return `${mainReport}\n\n${operationalSummary.trim()}`;
 }
 
 app.post("/api/reports/generate", async (req, res) => {
